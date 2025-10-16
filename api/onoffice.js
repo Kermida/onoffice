@@ -1,7 +1,8 @@
 const crypto = require('crypto');
+const https = require('https');
 
 module.exports = async (req, res) => {
-  // CORS Headers für Make.com
+  // CORS Headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -17,13 +18,19 @@ module.exports = async (req, res) => {
   }
 
   try {
+    // Body parsen
     const { token, secret, request } = req.body;
 
     // Validierung
     if (!token || !secret || !request) {
       return res.status(400).json({
         error: 'Missing required fields',
-        required: ['token', 'secret', 'request']
+        required: ['token', 'secret', 'request'],
+        received: {
+          token: !!token,
+          secret: !!secret,
+          request: !!request
+        }
       });
     }
 
@@ -50,16 +57,44 @@ module.exports = async (req, res) => {
       timestamp: timestamp
     };
 
-    // onOffice API aufrufen
-    const onofficeResponse = await fetch('https://api.onoffice.de/api/stable/api.php', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(onofficeRequest)
-    });
+    const requestBody = JSON.stringify(onofficeRequest);
 
-    const responseData = await onofficeResponse.json();
+    // onOffice API mit https Modul aufrufen (kompatibel mit allen Node.js Versionen)
+    const responseData = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: 'api.onoffice.de',
+        path: '/api/stable/api.php',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(requestBody)
+        }
+      };
+
+      const apiReq = https.request(options, (apiRes) => {
+        let data = '';
+
+        apiRes.on('data', (chunk) => {
+          data += chunk;
+        });
+
+        apiRes.on('end', () => {
+          try {
+            const jsonData = JSON.parse(data);
+            resolve(jsonData);
+          } catch (e) {
+            reject(new Error('Invalid JSON response from onOffice API'));
+          }
+        });
+      });
+
+      apiReq.on('error', (error) => {
+        reject(error);
+      });
+
+      apiReq.write(requestBody);
+      apiReq.end();
+    });
 
     // Response an Make.com zurückgeben
     return res.status(200).json({
@@ -72,17 +107,8 @@ module.exports = async (req, res) => {
     console.error('Error:', error);
     return res.status(500).json({
       error: 'Internal server error',
-      message: error.message
+      message: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 };
-```
-
----
-
-## **ORDNERSTRUKTUR:**
-```
-onoffice-middleware/
-├── api/
-│   └── onoffice.js          ← JavaScript Code (oben)
-└── package.json              ← JSON Config (oben)
