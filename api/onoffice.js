@@ -19,7 +19,7 @@ module.exports = async (req, res) => {
 
   try {
     // Body parsen
-    const { token, secret, request } = req.body;
+    const { token, secret, request, timestampOffset } = req.body;
 
     // Validierung
     if (!token || !secret || !request) {
@@ -34,8 +34,10 @@ module.exports = async (req, res) => {
       });
     }
 
-    // Aktuellen Timestamp generieren
-    const timestamp = Math.floor(Date.now() / 1000);
+    // Aktuellen Timestamp generieren mit optionalem Offset
+    // timestampOffset kann positive oder negative Sekunden sein (z.B. -7200 für -2 Stunden)
+    const offset = timestampOffset || 0;
+    const timestamp = Math.floor(Date.now() / 1000) + offset;
 
     // HMAC berechnen
     const hmacInput = timestamp + JSON.stringify({
@@ -59,7 +61,7 @@ module.exports = async (req, res) => {
 
     const requestBody = JSON.stringify(onofficeRequest);
 
-    // onOffice API mit https Modul aufrufen (kompatibel mit allen Node.js Versionen)
+    // onOffice API mit https Modul aufrufen
     const responseData = await new Promise((resolve, reject) => {
       const options = {
         hostname: 'api.onoffice.de',
@@ -100,6 +102,7 @@ module.exports = async (req, res) => {
     return res.status(200).json({
       success: true,
       timestamp: timestamp,
+      timestampOffset: offset,
       data: responseData
     });
 
